@@ -324,7 +324,7 @@ class RSocketClient implements RSocket {
                             .transform(
                                 f -> {
                                   LimitableRequestPublisher<Payload> wrapped =
-                                      LimitableRequestPublisher.wrap(f, sendProcessor.getBufferSize());
+                                      LimitableRequestPublisher.wrap(f, 1);
                                   // Need to set this to one for first the frame
                                   wrapped.request(1);
                                   senders.put(streamId, wrapped);

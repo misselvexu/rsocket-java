@@ -452,7 +452,7 @@ class RSocketServer implements ResponderRSocket {
         .transform(
             frameFlux -> {
               LimitableRequestPublisher<Payload> payloads =
-                  LimitableRequestPublisher.wrap(frameFlux, sendProcessor.getBufferSize());
+                  LimitableRequestPublisher.wrap(frameFlux, sendProcessor.available());
               sendingLimitableSubscriptions.put(streamId, payloads);
               payloads.request(
                   initialRequestN >= Integer.MAX_VALUE ? Long.MAX_VALUE : initialRequestN);
