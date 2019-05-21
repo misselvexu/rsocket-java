@@ -329,10 +329,10 @@ class RSocketClient implements RSocket {
                                   wrapped.request(1);
                                   senders.put(streamId, wrapped);
                                   receivers.put(streamId, receiver);
-  
-                                  Disposable subscribe = transportRequestN
-                                                           .subscribe(wrapped::increaseInternalLimit);
-  
+
+                                  Disposable subscribe =
+                                      transportRequestN.subscribe(wrapped::increaseInternalLimit);
+
                                   return wrapped.doFinally(s -> subscribe.dispose());
                                 })
                             .subscribe(

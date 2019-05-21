@@ -104,7 +104,7 @@ class RSocketServer implements ResponderRSocket {
         .subscribe(null, this::handleSendProcessorError);
 
     Disposable receiveDisposable = connection.receive().subscribe(this::handleFrame, errorConsumer);
-    
+
     this.connection
         .onClose()
         .doFinally(
@@ -456,11 +456,9 @@ class RSocketServer implements ResponderRSocket {
               sendingLimitableSubscriptions.put(streamId, payloads);
               payloads.request(
                   initialRequestN >= Integer.MAX_VALUE ? Long.MAX_VALUE : initialRequestN);
-  
-  
-              Disposable subscribe = transportRequestN
-                                       .subscribe(payloads::increaseInternalLimit);
-  
+
+              Disposable subscribe = transportRequestN.subscribe(payloads::increaseInternalLimit);
+
               return payloads.doFinally(s -> subscribe.dispose());
             })
         .subscribe(
