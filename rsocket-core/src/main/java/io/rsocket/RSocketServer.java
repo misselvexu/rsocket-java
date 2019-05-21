@@ -59,6 +59,7 @@ class RSocketServer implements ResponderRSocket {
   private final UnboundedProcessor<ByteBuf> sendProcessor;
   private final ByteBufAllocator allocator;
   private final KeepAliveFramesAcceptor keepAliveFramesAcceptor;
+  private final ReplayProcessor<Long> transportRequestN = ReplayProcessor.cacheLastOrDefault(256L);
 
   /*client responder*/
   RSocketServer(
@@ -98,12 +99,12 @@ class RSocketServer implements ResponderRSocket {
     this.sendProcessor = new UnboundedProcessor<>();
 
     connection
-        .send(sendProcessor)
+        .send(sendProcessor.doOnRequest(transportRequestN::onNext))
         .doFinally(this::handleSendProcessorCancel)
         .subscribe(null, this::handleSendProcessorError);
 
     Disposable receiveDisposable = connection.receive().subscribe(this::handleFrame, errorConsumer);
-
+    
     this.connection
         .onClose()
         .doFinally(
@@ -451,11 +452,16 @@ class RSocketServer implements ResponderRSocket {
         .transform(
             frameFlux -> {
               LimitableRequestPublisher<Payload> payloads =
-                  LimitableRequestPublisher.wrap(frameFlux);
+                  LimitableRequestPublisher.wrap(frameFlux, sendProcessor.getBufferSize());
               sendingLimitableSubscriptions.put(streamId, payloads);
               payloads.request(
                   initialRequestN >= Integer.MAX_VALUE ? Long.MAX_VALUE : initialRequestN);
-              return payloads;
+  
+  
+              Disposable subscribe = transportRequestN
+                                       .subscribe(payloads::increaseInternalLimit);
+  
+              return payloads.doFinally(s -> subscribe.dispose());
             })
         .subscribe(
             new BaseSubscriber<Payload>() {

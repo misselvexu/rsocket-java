@@ -43,6 +43,7 @@ import java.util.function.Supplier;
 import org.reactivestreams.Processor;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscriber;
+import reactor.core.Disposable;
 import reactor.core.publisher.*;
 
 /** Client Side of a RSocket socket. Sends {@link ByteBuf}s to a {@link RSocketServer} */
@@ -58,6 +59,7 @@ class RSocketClient implements RSocket {
   private final Lifecycle lifecycle = new Lifecycle();
   private final ByteBufAllocator allocator;
   private final KeepAliveFramesAcceptor keepAliveFramesAcceptor;
+  private final ReplayProcessor<Long> transportRequestN = ReplayProcessor.cacheLastOrDefault(256L);
 
   /*client requester*/
   RSocketClient(
@@ -82,7 +84,7 @@ class RSocketClient implements RSocket {
 
     connection.onClose().doFinally(signalType -> terminate()).subscribe(null, errorConsumer);
     connection
-        .send(sendProcessor)
+        .send(sendProcessor.doOnRequest(transportRequestN::onNext))
         .doFinally(this::handleSendProcessorCancel)
         .subscribe(null, this::handleSendProcessorError);
 
@@ -322,13 +324,16 @@ class RSocketClient implements RSocket {
                             .transform(
                                 f -> {
                                   LimitableRequestPublisher<Payload> wrapped =
-                                      LimitableRequestPublisher.wrap(f);
+                                      LimitableRequestPublisher.wrap(f, sendProcessor.getBufferSize());
                                   // Need to set this to one for first the frame
                                   wrapped.request(1);
                                   senders.put(streamId, wrapped);
                                   receivers.put(streamId, receiver);
-
-                                  return wrapped;
+  
+                                  Disposable subscribe = transportRequestN
+                                                           .subscribe(wrapped::increaseInternalLimit);
+  
+                                  return wrapped.doFinally(s -> subscribe.dispose());
                                 })
                             .subscribe(
                                 new BaseSubscriber<Payload>() {
