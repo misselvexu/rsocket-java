@@ -25,6 +25,7 @@ import io.netty.util.ReferenceCountUtil;
 import io.netty.util.collection.IntObjectHashMap;
 import io.rsocket.exceptions.ConnectionErrorException;
 import io.rsocket.exceptions.Exceptions;
+import io.rsocket.exceptions.MissingLeaseException;
 import io.rsocket.frame.*;
 import io.rsocket.frame.decoder.PayloadDecoder;
 import io.rsocket.internal.LimitableRequestPublisher;
@@ -33,6 +34,7 @@ import io.rsocket.internal.UnicastMonoProcessor;
 import io.rsocket.keepalive.KeepAliveFramesAcceptor;
 import io.rsocket.keepalive.KeepAliveHandler;
 import io.rsocket.keepalive.KeepAliveSupport;
+import io.rsocket.lease.LeaseHandler;
 import java.nio.channels.ClosedChannelException;
 import java.util.Collections;
 import java.util.Map;
@@ -40,6 +42,7 @@ import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.function.Consumer;
 import java.util.function.LongConsumer;
 import java.util.function.Supplier;
+import javax.annotation.Nullable;
 import org.reactivestreams.Processor;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscriber;
@@ -54,6 +57,7 @@ class RSocketRequester implements RSocket {
   private final PayloadDecoder payloadDecoder;
   private final Consumer<Throwable> errorConsumer;
   private final StreamIdSupplier streamIdSupplier;
+  private LeaseHandler.Requester leaseHandler;
   private final Map<Integer, LimitableRequestPublisher> senders;
   private final Map<Integer, Processor<Payload, Payload>> receivers;
   private final UnboundedProcessor<ByteBuf> sendProcessor;
@@ -70,12 +74,14 @@ class RSocketRequester implements RSocket {
       StreamIdSupplier streamIdSupplier,
       int keepAliveTickPeriod,
       int keepAliveAckTimeout,
-      KeepAliveHandler keepAliveHandler) {
+      @Nullable KeepAliveHandler keepAliveHandler,
+      @Nullable LeaseHandler.Requester leaseHandler) {
     this.allocator = allocator;
     this.connection = connection;
     this.payloadDecoder = payloadDecoder;
     this.errorConsumer = errorConsumer;
     this.streamIdSupplier = streamIdSupplier;
+    this.leaseHandler = leaseHandler;
     this.senders = Collections.synchronizedMap(new IntObjectHashMap<>());
     this.receivers = Collections.synchronizedMap(new IntObjectHashMap<>());
 
@@ -106,8 +112,18 @@ class RSocketRequester implements RSocket {
       DuplexConnection connection,
       PayloadDecoder payloadDecoder,
       Consumer<Throwable> errorConsumer,
-      StreamIdSupplier streamIdSupplier) {
-    this(allocator, connection, payloadDecoder, errorConsumer, streamIdSupplier, 0, 0, null);
+      StreamIdSupplier streamIdSupplier,
+      @Nullable LeaseHandler.Requester leaseHandler) {
+    this(
+        allocator,
+        connection,
+        payloadDecoder,
+        errorConsumer,
+        streamIdSupplier,
+        0,
+        0,
+        null,
+        leaseHandler);
   }
 
   private void terminate(KeepAlive keepAlive) {
@@ -182,7 +198,9 @@ class RSocketRequester implements RSocket {
 
   @Override
   public double availability() {
-    return connection.availability();
+    return leaseHandler != null
+        ? Math.min(connection.availability(), leaseHandler.availability())
+        : connection.availability();
   }
 
   @Override
@@ -203,6 +221,13 @@ class RSocketRequester implements RSocket {
   private Mono<Void> handleFireAndForget(Payload payload) {
     return lifecycle.active(
         () -> {
+          if (leaseHandler != null) {
+            MissingLeaseException leaseError = leaseHandler.useLease();
+            if (leaseError != null) {
+              throw leaseError;
+            }
+          }
+
           final int streamId = streamIdSupplier.nextStreamId();
           ByteBuf requestFrame =
               RequestFireAndForgetFrameFlyweight.encode(
@@ -219,6 +244,13 @@ class RSocketRequester implements RSocket {
   private Mono<Payload> handleRequestResponse(final Payload payload) {
     return lifecycle.activeMono(
         () -> {
+          if (leaseHandler != null) {
+            MissingLeaseException leaseError = leaseHandler.useLease();
+            if (leaseError != null) {
+              return Mono.error(leaseError);
+            }
+          }
+
           int streamId = streamIdSupplier.nextStreamId();
           final UnboundedProcessor<ByteBuf> sendProcessor = this.sendProcessor;
           final ByteBuf requestFrame =
@@ -252,6 +284,13 @@ class RSocketRequester implements RSocket {
   private Flux<Payload> handleRequestStream(final Payload payload) {
     return lifecycle.activeFlux(
         () -> {
+          if (leaseHandler != null) {
+            MissingLeaseException leaseError = leaseHandler.useLease();
+            if (leaseError != null) {
+              return Flux.error(leaseError);
+            }
+          }
+
           int streamId = streamIdSupplier.nextStreamId();
 
           final UnboundedProcessor<ByteBuf> sendProcessor = this.sendProcessor;
@@ -304,6 +343,13 @@ class RSocketRequester implements RSocket {
   private Flux<Payload> handleChannel(Flux<Payload> request) {
     return lifecycle.activeFlux(
         () -> {
+          if (leaseHandler != null) {
+            MissingLeaseException leaseError = leaseHandler.useLease();
+            if (leaseError != null) {
+              return Flux.error(leaseError);
+            }
+          }
+
           final UnboundedProcessor<ByteBuf> sendProcessor = this.sendProcessor;
           final UnicastProcessor<Payload> receiver = UnicastProcessor.create();
           final int streamId = streamIdSupplier.nextStreamId();
@@ -416,6 +462,13 @@ class RSocketRequester implements RSocket {
   private Mono<Void> handleMetadataPush(Payload payload) {
     return lifecycle.active(
         () -> {
+          if (leaseHandler != null) {
+            MissingLeaseException leaseError = leaseHandler.useLease();
+            if (leaseError != null) {
+              throw leaseError;
+            }
+          }
+
           sendProcessor.onNext(
               MetadataPushFrameFlyweight.encode(allocator, payload.sliceMetadata().retain()));
         });
@@ -427,7 +480,6 @@ class RSocketRequester implements RSocket {
 
   protected void terminate() {
     lifecycle.setTerminationError(new ClosedChannelException());
-
     try {
       receivers.values().forEach(this::cleanUpSubscriber);
       senders.values().forEach(this::cleanUpLimitableRequestPublisher);
@@ -480,6 +532,12 @@ class RSocketRequester implements RSocket {
         connection.dispose();
         break;
       case LEASE:
+        if (leaseHandler != null) {
+          int timeToLiveMillis = LeaseFrameFlyweight.ttl(frame);
+          int numberOfRequests = LeaseFrameFlyweight.numRequests(frame);
+          ByteBuf metadata = LeaseFrameFlyweight.metadata(frame).retain();
+          leaseHandler.onReceiveLease(timeToLiveMillis, numberOfRequests, metadata);
+        }
         break;
       case KEEPALIVE:
         if (keepAliveFramesAcceptor != null) {
