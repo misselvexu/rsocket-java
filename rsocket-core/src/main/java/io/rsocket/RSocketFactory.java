@@ -576,7 +576,7 @@ public class RSocketFactory {
                   });
         }
 
-        LeaseSupport leaseSupport = new LeaseSupport(isLeaseEnabled, "client", allocator);
+        LeaseSupport leaseSupport = new LeaseSupport(isLeaseEnabled, "server", allocator);
 
         return serverSetup.acceptRSocketSetup(
             setupFrame,

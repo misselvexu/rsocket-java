@@ -107,6 +107,7 @@ public class LeaseHandler {
 
     @Override
     public void dispose() {
+      responderLeaseManager.dispose();
       onClose.onComplete();
     }
 
@@ -119,19 +120,24 @@ public class LeaseHandler {
   private class RSocketLeaseSender implements LeaseSender {
 
     @Override
-    public void sendLease(int timeToLiveMillis, int numberOfRequests, @Nullable ByteBuf metadata) {
+    public void sendLease(
+        int timeToLiveMillis,
+        int numberOfRequests,
+        @Nullable ByteBuf metadata,
+        long statsWindowDurationMillis) {
       if (!isDisposed()) {
         ByteBuf leaseFrame =
             LeaseFrameFlyweight.encode(
                 byteBufAllocator, timeToLiveMillis, numberOfRequests, metadata);
         leaseFrameSender.accept(leaseFrame);
-        responderLeaseManager.updateLease(timeToLiveMillis, numberOfRequests, metadata);
+        responderLeaseManager.updateLease(
+            timeToLiveMillis, numberOfRequests, metadata, statsWindowDurationMillis);
       }
     }
 
     @Override
-    public Lease currentLease() {
-      return responderLeaseManager.getLease();
+    public LeaseSlidingWindowStats leaseStats() {
+      return responderLeaseManager.getLeaseStats();
     }
 
     @Override

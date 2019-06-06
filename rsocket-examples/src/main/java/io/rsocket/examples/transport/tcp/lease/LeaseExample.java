@@ -60,7 +60,7 @@ public class LeaseExample {
         .subscribe(
             sender -> {
               System.out.println(
-                  "Client responder sends new lease, current: " + sender.currentLease());
+                  "Client responder sends new lease, current: " + sender.leaseStats().lease());
               sender.sendLease(3_000, 5);
             });
 
@@ -76,7 +76,7 @@ public class LeaseExample {
         .subscribe(
             sender -> {
               System.out.println(
-                  "Server responder sends new lease, current: " + sender.currentLease());
+                  "Server responder sends new lease, current: " + sender.leaseStats().lease());
               sender.sendLease(7_000, 5);
             });
 

@@ -20,8 +20,9 @@ import io.netty.buffer.ByteBuf;
 import java.util.Objects;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import reactor.core.Disposable;
 
-class LeaseManager {
+class LeaseManager implements Disposable {
   private volatile LeaseImpl currentLease = LeaseImpl.empty();
   private final String tag;
 
@@ -30,24 +31,37 @@ class LeaseManager {
   }
 
   public double availability() {
-    LeaseImpl l = this.currentLease;
-    return l.isValid() ? l.getAllowedRequests() / (double) l.getStartingAllowedRequests() : 0.0;
+    LeaseImpl l = currentLease;
+    return l.isValid() ? l.getAllowedRequests() / (double) l.getInitialAllowedRequests() : 0.0;
+  }
+
+  public void updateLease(
+      int timeToLiveMillis,
+      int numberOfRequests,
+      @Nullable ByteBuf metadata,
+      long statsWindowDurationMillis) {
+    currentLease.dispose();
+    currentLease =
+        LeaseImpl.create(timeToLiveMillis, numberOfRequests, metadata, statsWindowDurationMillis);
   }
 
   public void updateLease(int timeToLiveMillis, int numberOfRequests, @Nullable ByteBuf metadata) {
-    currentLease.getMetadata().release();
-    this.currentLease = LeaseImpl.create(timeToLiveMillis, numberOfRequests, metadata);
+    updateLease(timeToLiveMillis, numberOfRequests, metadata, 0);
+  }
+
+  public LeaseSlidingWindowStats getLeaseStats() {
+    return currentLease.getStats();
   }
 
   public Lease getLease() {
     return currentLease;
   }
 
-  /** @return null if current Lease used successfully, Lease otherwise */
+  /** @return null if current Lease used successfully, current Lease otherwise */
   @Nullable
   public Lease useLease() {
-    LeaseImpl l = this.currentLease;
-    boolean success = l.use(1);
+    LeaseImpl l = currentLease;
+    boolean success = l.use();
     return success ? null : l;
   }
 
@@ -58,5 +72,15 @@ class LeaseManager {
   @Override
   public String toString() {
     return "LeaseManager{" + "tag='" + tag + '\'' + '}';
+  }
+
+  @Override
+  public void dispose() {
+    currentLease.dispose();
+  }
+
+  @Override
+  public boolean isDisposed() {
+    return currentLease.isDisposed();
   }
 }

@@ -34,8 +34,26 @@ public interface Lease {
    *
    * @return initial number of requests allowed by this lease.
    */
-  default int getStartingAllowedRequests() {
-    return -1;
+  default int getInitialAllowedRequests() {
+    throw new UnsupportedOperationException("Not implemented");
+  }
+
+  /**
+   * Number of successful requests allowed by this lease.
+   *
+   * @return Number of successful requests allowed by this lease.
+   */
+  default int getSuccessfulRequests() {
+    return getInitialAllowedRequests() - getAllowedRequests();
+  }
+
+  /**
+   * Number of requests rejected due to missing lease.
+   *
+   * @return Number of requests rejected due to missing lease.
+   */
+  default int getRejectedRequests() {
+    throw new UnsupportedOperationException("Not implemented");
   }
 
   /**

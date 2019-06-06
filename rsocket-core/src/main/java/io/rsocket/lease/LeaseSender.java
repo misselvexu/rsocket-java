@@ -23,13 +23,22 @@ import reactor.core.publisher.Mono;
 
 public interface LeaseSender {
 
-  void sendLease(int timeToLiveMillis, int numberOfRequests, @Nullable ByteBuf metadata);
+  void sendLease(
+      int timeToLiveMillis,
+      int numberOfRequests,
+      @Nullable ByteBuf metadata,
+      long statsWindowDurationMillis);
 
-  default void sendLease(int timeToLiveMillis, int numberOfRequests) {
-    sendLease(timeToLiveMillis, numberOfRequests, Unpooled.EMPTY_BUFFER);
+  default void sendLease(
+      int timeToLiveMillis, int numberOfRequests, long statsWindowDurationMillis) {
+    sendLease(timeToLiveMillis, numberOfRequests, Unpooled.EMPTY_BUFFER, statsWindowDurationMillis);
   }
 
-  Lease currentLease();
+  default void sendLease(int timeToLiveMillis, int numberOfRequests) {
+    sendLease(timeToLiveMillis, numberOfRequests, Unpooled.EMPTY_BUFFER, 0);
+  }
+
+  LeaseSlidingWindowStats leaseStats();
 
   Mono<Void> onClose();
 

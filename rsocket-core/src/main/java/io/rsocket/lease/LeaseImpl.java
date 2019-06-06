@@ -21,31 +21,47 @@ import io.netty.buffer.Unpooled;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import reactor.core.Disposable;
 
-class LeaseImpl implements Lease {
-  private static final LeaseImpl EMPTY_LEASE = new LeaseImpl(0, 0, null);
+class LeaseImpl implements Lease, Disposable {
+  private static final LeaseImpl EMPTY_LEASE = new LeaseImpl(0, 0, null, 0);
 
   private final int timeToLiveMillis;
   private final AtomicInteger allowedRequests;
+  private final AtomicInteger rejectedRequests = new AtomicInteger();
   private final int startingAllowedRequests;
   private final ByteBuf metadata;
   private final long expiry;
+  private final RSocketLeaseSlidingWindowStats leaseStats;
 
-  static LeaseImpl create(int timeToLiveMillis, int numberOfRequests, @Nullable ByteBuf metadata) {
+  static LeaseImpl create(
+      int timeToLiveMillis,
+      int numberOfRequests,
+      @Nullable ByteBuf metadata,
+      long rollingWindowMillis) {
     assertLease(timeToLiveMillis, numberOfRequests);
-    return new LeaseImpl(timeToLiveMillis, numberOfRequests, metadata);
+    return new LeaseImpl(timeToLiveMillis, numberOfRequests, metadata, rollingWindowMillis);
   }
 
   static LeaseImpl empty() {
     return EMPTY_LEASE;
   }
 
-  private LeaseImpl(int timeToLiveMillis, int allowedRequests, @Nullable ByteBuf metadata) {
+  private LeaseImpl(
+      int timeToLiveMillis,
+      int allowedRequests,
+      @Nullable ByteBuf metadata,
+      long rollingWindowMillis) {
     this.allowedRequests = new AtomicInteger(allowedRequests);
     this.startingAllowedRequests = allowedRequests;
     this.timeToLiveMillis = timeToLiveMillis;
     this.metadata = metadata == null ? Unpooled.EMPTY_BUFFER : metadata;
-    this.expiry = timeToLiveMillis == 0 ? 0 : now() + timeToLiveMillis;
+    boolean isEmpty = timeToLiveMillis == 0;
+    this.expiry = isEmpty ? 0 : now() + timeToLiveMillis;
+    this.leaseStats =
+        isEmpty || rollingWindowMillis == 0
+            ? RSocketLeaseSlidingWindowStats.empty()
+            : RSocketLeaseSlidingWindowStats.create(this, rollingWindowMillis);
   }
 
   public int getTimeToLiveMillis() {
@@ -58,7 +74,12 @@ class LeaseImpl implements Lease {
   }
 
   @Override
-  public int getStartingAllowedRequests() {
+  public int getRejectedRequests() {
+    return rejectedRequests.get();
+  }
+
+  @Override
+  public int getInitialAllowedRequests() {
     return startingAllowedRequests;
   }
 
@@ -82,15 +103,25 @@ class LeaseImpl implements Lease {
     return !isEmpty() && getAllowedRequests() > 0 && !isExpired();
   }
 
-  public boolean use(int useRequestCount) {
-    assertUseRequests(useRequestCount);
+  @Nullable
+  public RSocketLeaseSlidingWindowStats getStats() {
+    return leaseStats;
+  }
+
+  public boolean use() {
+
     if (isExpired()) {
+      rejectedRequests.incrementAndGet();
       return false;
     }
-    int available =
-        allowedRequests.accumulateAndGet(
-            useRequestCount, (cur, update) -> Math.max(-1, cur - update));
-    return available >= 0;
+    int remaining =
+        allowedRequests.accumulateAndGet(1, (cur, update) -> Math.max(-1, cur - update));
+
+    boolean success = remaining >= 0;
+    if (!success) {
+      rejectedRequests.incrementAndGet();
+    }
+    return success;
   }
 
   @Override
@@ -110,12 +141,6 @@ class LeaseImpl implements Lease {
         + '}';
   }
 
-  static void assertUseRequests(int useRequestCount) {
-    if (useRequestCount <= 0) {
-      throw new IllegalArgumentException("Number of requests must be positive");
-    }
-  }
-
   private long now() {
     return System.currentTimeMillis();
   }
@@ -127,5 +152,16 @@ class LeaseImpl implements Lease {
     if (timeToLiveMillis <= 0) {
       throw new IllegalArgumentException("Time-to-live must be positive");
     }
+  }
+
+  @Override
+  public void dispose() {
+    getMetadata().release();
+    leaseStats.dispose();
+  }
+
+  @Override
+  public boolean isDisposed() {
+    return leaseStats.isDisposed();
   }
 }
