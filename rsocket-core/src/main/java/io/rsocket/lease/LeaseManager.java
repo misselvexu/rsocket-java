@@ -39,17 +39,19 @@ class LeaseManager implements Disposable {
       int timeToLiveMillis,
       int numberOfRequests,
       @Nullable ByteBuf metadata,
-      long statsWindowDurationMillis) {
+      long statsStepMillis,
+      int statsStepCount) {
     currentLease.dispose();
     currentLease =
-        LeaseImpl.create(timeToLiveMillis, numberOfRequests, metadata, statsWindowDurationMillis);
+        LeaseImpl.create(
+            timeToLiveMillis, numberOfRequests, metadata, statsStepMillis, statsStepCount);
   }
 
   public void updateLease(int timeToLiveMillis, int numberOfRequests, @Nullable ByteBuf metadata) {
-    updateLease(timeToLiveMillis, numberOfRequests, metadata, 0);
+    updateLease(timeToLiveMillis, numberOfRequests, metadata, 0, 0);
   }
 
-  public LeaseSlidingWindowStats getLeaseStats() {
+  public LeaseStats getLeaseStats() {
     return currentLease.getStats();
   }
 

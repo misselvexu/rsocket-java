@@ -24,44 +24,35 @@ import javax.annotation.Nullable;
 import reactor.core.Disposable;
 
 class LeaseImpl implements Lease, Disposable {
-  private static final LeaseImpl EMPTY_LEASE = new LeaseImpl(0, 0, null, 0);
-
   private final int timeToLiveMillis;
   private final AtomicInteger allowedRequests;
   private final AtomicInteger rejectedRequests = new AtomicInteger();
   private final int startingAllowedRequests;
   private final ByteBuf metadata;
   private final long expiry;
-  private final RSocketLeaseSlidingWindowStats leaseStats;
+  private volatile RSocketLeaseStats leaseStats;
 
   static LeaseImpl create(
       int timeToLiveMillis,
       int numberOfRequests,
       @Nullable ByteBuf metadata,
-      long rollingWindowMillis) {
+      long statsStepMillis,
+      int statsStepCount) {
     assertLease(timeToLiveMillis, numberOfRequests);
-    return new LeaseImpl(timeToLiveMillis, numberOfRequests, metadata, rollingWindowMillis);
+    return new LeaseImpl(timeToLiveMillis, numberOfRequests, metadata)
+        .createStats(statsStepMillis, statsStepCount);
   }
 
   static LeaseImpl empty() {
-    return EMPTY_LEASE;
+    return new LeaseImpl(0, 0, null).createStats(0, 0);
   }
 
-  private LeaseImpl(
-      int timeToLiveMillis,
-      int allowedRequests,
-      @Nullable ByteBuf metadata,
-      long rollingWindowMillis) {
+  private LeaseImpl(int timeToLiveMillis, int allowedRequests, @Nullable ByteBuf metadata) {
     this.allowedRequests = new AtomicInteger(allowedRequests);
     this.startingAllowedRequests = allowedRequests;
     this.timeToLiveMillis = timeToLiveMillis;
     this.metadata = metadata == null ? Unpooled.EMPTY_BUFFER : metadata;
-    boolean isEmpty = timeToLiveMillis == 0;
-    this.expiry = isEmpty ? 0 : now() + timeToLiveMillis;
-    this.leaseStats =
-        isEmpty || rollingWindowMillis == 0
-            ? RSocketLeaseSlidingWindowStats.empty()
-            : RSocketLeaseSlidingWindowStats.create(this, rollingWindowMillis);
+    this.expiry = timeToLiveMillis == 0 ? 0 : now() + timeToLiveMillis;
   }
 
   public int getTimeToLiveMillis() {
@@ -103,8 +94,7 @@ class LeaseImpl implements Lease, Disposable {
     return !isEmpty() && getAllowedRequests() > 0 && !isExpired();
   }
 
-  @Nullable
-  public RSocketLeaseSlidingWindowStats getStats() {
+  public RSocketLeaseStats getStats() {
     return leaseStats;
   }
 
@@ -134,11 +124,21 @@ class LeaseImpl implements Lease, Disposable {
         + allowedRequests
         + ", startingAllowedRequests="
         + startingAllowedRequests
+        + ", rejectedRequests="
+        + rejectedRequests
         + ", expired="
         + isExpired(now)
         + ", remainingTimeToLiveMillis="
         + getRemainingTimeToLiveMillis(now)
         + '}';
+  }
+
+  private LeaseImpl createStats(long statsStepMillis, int statsStepCount) {
+    this.leaseStats =
+        timeToLiveMillis == 0 || statsStepMillis == 0
+            ? RSocketLeaseStats.empty()
+            : RSocketLeaseStats.create(this, statsStepMillis, statsStepCount);
+    return this;
   }
 
   private long now() {

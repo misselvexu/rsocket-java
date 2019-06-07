@@ -27,18 +27,22 @@ public interface LeaseSender {
       int timeToLiveMillis,
       int numberOfRequests,
       @Nullable ByteBuf metadata,
-      long statsWindowDurationMillis);
+      long statsStepMillis,
+      int statsStepCount);
 
   default void sendLease(
-      int timeToLiveMillis, int numberOfRequests, long statsWindowDurationMillis) {
-    sendLease(timeToLiveMillis, numberOfRequests, Unpooled.EMPTY_BUFFER, statsWindowDurationMillis);
+      int timeToLiveMillis, int numberOfRequests, long statsStepMillis, int statsStepCount) {
+    sendLease(
+        timeToLiveMillis, numberOfRequests, Unpooled.EMPTY_BUFFER, statsStepMillis, statsStepCount);
   }
 
   default void sendLease(int timeToLiveMillis, int numberOfRequests) {
-    sendLease(timeToLiveMillis, numberOfRequests, Unpooled.EMPTY_BUFFER, 0);
+    sendLease(timeToLiveMillis, numberOfRequests, Unpooled.EMPTY_BUFFER, 0, 0);
   }
 
-  LeaseSlidingWindowStats leaseStats();
+  Lease lease();
+
+  LeaseStats leaseStats();
 
   Mono<Void> onClose();
 

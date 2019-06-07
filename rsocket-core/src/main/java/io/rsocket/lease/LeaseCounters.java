@@ -16,23 +16,20 @@
 
 package io.rsocket.lease;
 
-public interface LeaseSlidingWindowStats {
+public interface LeaseCounters {
 
-  Lease lease();
+  /**
+   * @param counterIndex index of counter from 0 to {@link #countersSize() - 1}. 0 corresponds to
+   *     most recent counter
+   * @return step counter associated with given index
+   */
+  LeaseStepCounter counter(int counterIndex);
 
-  int totalRequests();
+  /** @return most recent counter of lease */
+  default LeaseStepCounter counter() {
+    return counter(0);
+  }
 
-  int successfulRequests();
-
-  int rejectedRequests();
-
-  double totalRequestsRate();
-
-  int rollingWindowIndex();
-
-  long rollingWindowMillis();
-
-  boolean isDisposed();
-
-  boolean isEmpty();
+  /** @return number of step counters for this Lease. */
+  int countersSize();
 }

@@ -124,19 +124,25 @@ public class LeaseHandler {
         int timeToLiveMillis,
         int numberOfRequests,
         @Nullable ByteBuf metadata,
-        long statsWindowDurationMillis) {
+        long statsStepMillis,
+        int statsStepCount) {
       if (!isDisposed()) {
         ByteBuf leaseFrame =
             LeaseFrameFlyweight.encode(
                 byteBufAllocator, timeToLiveMillis, numberOfRequests, metadata);
         leaseFrameSender.accept(leaseFrame);
         responderLeaseManager.updateLease(
-            timeToLiveMillis, numberOfRequests, metadata, statsWindowDurationMillis);
+            timeToLiveMillis, numberOfRequests, metadata, statsStepMillis, statsStepCount);
       }
     }
 
     @Override
-    public LeaseSlidingWindowStats leaseStats() {
+    public Lease lease() {
+      return responderLeaseManager.getLease();
+    }
+
+    @Override
+    public LeaseStats leaseStats() {
       return responderLeaseManager.getLeaseStats();
     }
 
