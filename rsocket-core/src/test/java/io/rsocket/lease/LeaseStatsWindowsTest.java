@@ -35,6 +35,7 @@ public class LeaseStatsWindowsTest {
     Assertions.assertThat(first.duration()).isCloseTo(5_000, withPercentage(1));
     Assertions.assertThat(first.reject()).isEqualTo(17);
     Assertions.assertThat(first.success()).isEqualTo(13);
+    Assertions.assertThat(first.total()).isEqualTo(30);
     Assertions.assertThat(first.rate()).isCloseTo(30 / (float) 5_000, withPercentage(1));
   }
 
@@ -46,7 +47,7 @@ public class LeaseStatsWindowsTest {
     SlidingWindow first = SlidingWindow.first(firstSuccess, firstReject, startMillis);
 
     long from = System.currentTimeMillis();
-    Mono.delay(Duration.ofMillis(1000)).block();
+    Mono.delay(Duration.ofMillis(100)).block();
     long to = System.currentTimeMillis();
     long actualDuration = to - from;
 
@@ -57,7 +58,8 @@ public class LeaseStatsWindowsTest {
     Assertions.assertThat(next.duration()).isCloseTo(actualDuration, withPercentage(10));
     Assertions.assertThat(next.reject()).isEqualTo(20);
     Assertions.assertThat(next.success()).isEqualTo(20);
-    Assertions.assertThat(next.rate()).isCloseTo(10 / (float) actualDuration, withPercentage(10));
+    Assertions.assertThat(next.total()).isEqualTo(40);
+    Assertions.assertThat(next.rate()).isCloseTo(40 / (float) actualDuration, withPercentage(10));
   }
 
   @Test
@@ -68,17 +70,18 @@ public class LeaseStatsWindowsTest {
     SlidingWindow first = SlidingWindow.first(firstSuccess, firstReject, startMillis);
 
     long from = System.currentTimeMillis();
-    Mono.delay(Duration.ofMillis(1000)).block();
+    Mono.delay(Duration.ofMillis(100)).block();
     long to = System.currentTimeMillis();
     long actualDuration = to - from;
 
-    int nextSuccess = 34;
-    int nextReject = 26;
+    int nextSuccess = 13;
+    int nextReject = 17;
     SlidingWindow next = first.next(nextSuccess, nextReject);
 
     Assertions.assertThat(next.duration()).isCloseTo(actualDuration, withPercentage(10));
-    Assertions.assertThat(next.reject()).isEqualTo(9);
-    Assertions.assertThat(next.success()).isEqualTo(21);
+    Assertions.assertThat(next.reject()).isEqualTo(0);
+    Assertions.assertThat(next.success()).isEqualTo(0);
+    Assertions.assertThat(next.total()).isEqualTo(0);
     Assertions.assertThat(next.rate()).isCloseTo(0, withPercentage(1));
   }
 
@@ -90,7 +93,7 @@ public class LeaseStatsWindowsTest {
     SlidingWindow first = SlidingWindow.first(firstSuccess, firstReject, startMillis);
 
     long from = System.currentTimeMillis();
-    Mono.delay(Duration.ofMillis(1000)).block();
+    Mono.delay(Duration.ofMillis(100)).block();
     long to = System.currentTimeMillis();
     long actualDuration = to - from;
 
@@ -100,7 +103,8 @@ public class LeaseStatsWindowsTest {
     Assertions.assertThat(next.duration()).isCloseTo(actualDuration, withPercentage(10));
     Assertions.assertThat(next.reject()).isEqualTo(2);
     Assertions.assertThat(next.success()).isEqualTo(7);
-    Assertions.assertThat(next.rate()).isCloseTo(-21 / (float) actualDuration, withPercentage(10));
+    Assertions.assertThat(next.total()).isEqualTo(9);
+    Assertions.assertThat(next.rate()).isCloseTo(9 / (float) actualDuration, withPercentage(10));
   }
 
   @Test
@@ -114,16 +118,18 @@ public class LeaseStatsWindowsTest {
     int nextReject = 19;
     SlidingWindow next = first.next(nextSuccess, nextReject);
 
+    long from = System.currentTimeMillis();
+    Mono.delay(Duration.ofMillis(100)).block();
     int lastSuccess = 40;
     int lastReject = 29;
     SlidingWindow last = next.next(lastSuccess, lastReject);
+    long to = System.currentTimeMillis();
+    long actualDuration = to - from;
 
-    double success = last.success(first);
-    double reject = last.reject(first);
-    double total = last.total(first);
-
-    Assertions.assertThat(success).isEqualTo(40);
-    Assertions.assertThat(reject).isEqualTo(29);
-    Assertions.assertThat(total).isEqualTo(69);
+    Assertions.assertThat(last.success(first)).isEqualTo(40);
+    Assertions.assertThat(last.reject(first)).isEqualTo(29);
+    Assertions.assertThat(last.total(first)).isEqualTo(69);
+    Assertions.assertThat(last.rate(first))
+        .isCloseTo(69 / (float) actualDuration, withPercentage(10));
   }
 }

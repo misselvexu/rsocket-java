@@ -20,40 +20,36 @@ public class SlidingWindow {
   private final int successStart;
   private final int rejectStart;
   private final long millisStart;
-  private final int totalStart;
 
   private final int successEnd;
   private final int rejectEnd;
   private final long millisEnd;
 
   static SlidingWindow first(int successCount, int rejectCount, long startMillis) {
-    return new SlidingWindow(0, 0, startMillis, 0, successCount, rejectCount, now());
+    return new SlidingWindow(0, 0, startMillis, successCount, rejectCount, now());
   }
 
   private SlidingWindow(
       int successStart,
       int rejectStart,
       long millisStart,
-      int totalStart,
       int successEnd,
       int rejectEnd,
       long millisEnd) {
     this.successStart = successStart;
     this.rejectStart = rejectStart;
     this.millisStart = millisStart;
-    this.totalStart = totalStart;
     this.successEnd = successEnd;
     this.rejectEnd = rejectEnd;
     this.millisEnd = millisEnd;
   }
 
   SlidingWindow next(int successCount, int rejectCount) {
-    return new SlidingWindow(
-        successEnd, rejectEnd, millisEnd, total(), successCount, rejectCount, now());
+    return new SlidingWindow(successEnd, rejectEnd, millisEnd, successCount, rejectCount, now());
   }
 
   public int success(SlidingWindow from) {
-    return successEnd - from.successStart;
+    return requireNonNegative(successEnd - from.successStart);
   }
 
   public int success() {
@@ -61,7 +57,7 @@ public class SlidingWindow {
   }
 
   public int reject(SlidingWindow from) {
-    return rejectEnd - from.rejectStart;
+    return requireNonNegative(rejectEnd - from.rejectStart);
   }
 
   public int reject() {
@@ -71,7 +67,8 @@ public class SlidingWindow {
   public int total(SlidingWindow from) {
     int totalStart = from.rejectStart + from.successStart;
     int totalEnd = rejectEnd + successEnd;
-    return totalEnd - totalStart;
+    int dif = totalEnd - totalStart;
+    return requireNonNegative(dif);
   }
 
   public int total() {
@@ -80,10 +77,10 @@ public class SlidingWindow {
 
   public long duration(SlidingWindow from) {
     long start = from.millisStart;
-    long end = this.millisEnd;
+    long end = millisEnd;
     long d = end - start;
     if (d < 0) {
-      throw new IllegalStateException(String.format("ended before start: %d, %d", start, end));
+      throw new IllegalStateException(String.format("end is less than start: %d, %d", start, end));
     }
     return d;
   }
@@ -93,13 +90,23 @@ public class SlidingWindow {
   }
 
   public double rate() {
-    int total = total();
-    int dif = total - totalStart;
-    long interval = duration();
+    return rate(this);
+  }
+
+  public double rate(SlidingWindow from) {
+    int total = total(from);
+    long interval = duration(from);
     if (interval == 0) {
-      return dif < 0 ? Double.NEGATIVE_INFINITY : dif > 0 ? Double.POSITIVE_INFINITY : Double.NaN;
+      return total == 0 ? Double.NaN : Double.POSITIVE_INFINITY;
     }
-    return dif / (double) interval;
+    return total / (double) interval;
+  }
+
+  private static int requireNonNegative(int dif) {
+    if (dif < 0) {
+      throw new IllegalStateException("end value is less than start");
+    }
+    return dif;
   }
 
   private static long now() {
