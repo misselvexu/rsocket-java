@@ -57,7 +57,7 @@ public class LeaseHandler {
     return responderLeaseHandler;
   }
 
-  public LeaseSender leaseSupport() {
+  public LeaseSender leaseSender() {
     return leaseSupport;
   }
 

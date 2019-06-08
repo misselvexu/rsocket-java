@@ -13,7 +13,7 @@ public class LeaseSupport {
     leaseHandler = enabled ? new LeaseHandler(side, allocator) : null;
     requesterLeaseHandler = leaseHandler != null ? leaseHandler.requester() : null;
     responderLeaseHandler = leaseHandler != null ? leaseHandler.responder() : null;
-    leaseSender = leaseHandler != null ? leaseHandler.leaseSupport() : null;
+    leaseSender = leaseHandler != null ? leaseHandler.leaseSender() : null;
   }
 
   public LeaseHandler.Requester requesterHandler() {
