@@ -28,31 +28,31 @@ class RSocketLeaseStats implements Disposable, LeaseStats {
 
   private final AtomicBoolean disposed = new AtomicBoolean();
   private final Lease lease;
-  private final Disposable nextStepDisposable;
-  private final CircularBuffer<LeaseStepCounter> counters;
+  private final Disposable nextWindowDisposable;
+  private final CircularBuffer<SlidingWindow> windows;
   private final long startMillis;
 
-  public static RSocketLeaseStats create(Lease lease, long stepMillis, int stepCount) {
-    return new RSocketLeaseStats(lease, stepMillis, stepCount);
+  public static RSocketLeaseStats create(Lease lease, long windowMillis, int windowCount) {
+    return new RSocketLeaseStats(lease, windowMillis, windowCount);
   }
 
   public static RSocketLeaseStats empty() {
     return EMPTY;
   }
 
-  private RSocketLeaseStats(Lease lease, long stepMillis, int stepCount) {
+  private RSocketLeaseStats(Lease lease, long windowMillis, int windowCount) {
     this.lease = Objects.requireNonNull(lease);
     this.startMillis = System.currentTimeMillis();
-    if (!lease.isEmpty() && stepMillis > 0 && stepCount > 0) {
-      this.counters = new CircularBuffer<>(stepCount);
-      this.nextStepDisposable =
-          Flux.interval(Duration.ofMillis(stepMillis))
-              .doOnCancel(() -> addNextStep())
-              .doOnNext(ignored -> addNextStep())
+    if (!lease.isEmpty() && windowMillis > 0 && windowCount > 0) {
+      this.windows = new CircularBuffer<>(windowCount);
+      this.nextWindowDisposable =
+          Flux.interval(Duration.ofMillis(windowMillis))
+              .doOnCancel(() -> addNextWindow())
+              .doOnNext(ignored -> addNextWindow())
               .subscribe();
     } else {
-      this.nextStepDisposable = Disposables.disposed();
-      this.counters = null;
+      this.nextWindowDisposable = Disposables.disposed();
+      this.windows = null;
     }
   }
 
@@ -62,66 +62,65 @@ class RSocketLeaseStats implements Disposable, LeaseStats {
   }
 
   @Override
-  public LeaseCounters countersSnapshot() {
+  public LeaseStatsWindows snapshot() {
     if (isEmpty()) {
       throw new IllegalArgumentException(
           "Stats are empty - should be checked with isEmpty() first.");
     }
-    return new LeaseCounters() {
-      private final Object[] leaseStepCounters = counters.snapshot();
+    return new LeaseStatsWindows() {
+      private final Object[] leaseWindows = windows.snapshot();
 
       @Override
-      public LeaseStepCounter counter(int counterIndex) {
-        return (LeaseStepCounter) leaseStepCounters[counterIndex];
+      public SlidingWindow window(int index) {
+        return (SlidingWindow) leaseWindows[index];
       }
 
       @Override
-      public int countersSize() {
-        return leaseStepCounters.length;
+      public int size() {
+        return leaseWindows.length;
       }
     };
   }
 
   @Override
-  public LeaseStepCounter counter(int counterIndex) {
+  public SlidingWindow window(int index) {
     if (isEmpty()) {
       throw new IllegalArgumentException("Stats are empty");
     }
-    return counters.get(counterIndex);
+    return windows.get(index);
   }
 
   @Override
   public boolean isEmpty() {
-    return counters == null || counters.size() == 0;
+    return windows == null || windows.size() == 0;
   }
 
   @Override
-  public int countersSize() {
-    CircularBuffer<LeaseStepCounter> c = this.counters;
+  public int size() {
+    CircularBuffer<SlidingWindow> c = this.windows;
     return c == null ? 0 : c.size();
   }
 
   @Override
   public void dispose() {
     if (disposed.compareAndSet(false, true)) {
-      nextStepDisposable.dispose();
+      nextWindowDisposable.dispose();
     }
   }
 
   @Override
   public boolean isDisposed() {
-    return nextStepDisposable.isDisposed();
+    return nextWindowDisposable.isDisposed();
   }
 
-  private void addNextStep() {
+  private void addNextWindow() {
     Lease l = this.lease;
-    boolean isEmpty = counters.size() == 0;
-    LeaseStepCounter next =
+    boolean isEmpty = windows.size() == 0;
+    SlidingWindow next =
         isEmpty
-            ? LeaseStepCounter.first(
-                l.getSuccessfulRequests(), l.getRejectedRequests(), startMillis)
-            : counters.get(0).next(l.getSuccessfulRequests(), l.getRejectedRequests());
-    counters.offer(next);
+            ? SlidingWindow.first(l.getSuccessfulRequests(), l.getRejectedRequests(), startMillis)
+            : windows.get(0).next(l.getSuccessfulRequests(), l.getRejectedRequests());
+    windows.offer(next);
   }
 
   static class CircularBuffer<T> {

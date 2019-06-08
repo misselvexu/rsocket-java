@@ -17,24 +17,21 @@
 package io.rsocket.lease;
 
 /**
- * Represent statistics of responder lease represented as sliding window of step counters sampled at
- * given intervals
+ * Statistics of responder lease represented as rolling set of sliding windows sampled at given
+ * intervals
  */
-public interface LeaseStats extends LeaseCounters {
+public interface LeaseStats extends LeaseStatsWindows {
   /** @return lease these stats are associated with */
   Lease lease();
 
-  /**
-   * @return snapshot of step counters for current lease. Step counters at their respective indexes
-   *     are not expected to change
-   */
-  LeaseCounters countersSnapshot();
+  /** @return snapshot of sliding windows for current lease */
+  LeaseStatsWindows snapshot();
 
   @Override
-  LeaseStepCounter counter(int counterIndex);
+  SlidingWindow window(int index);
 
   @Override
-  int countersSize();
+  int size();
 
   /** @return true if new Lease was sent already or RSocket terminated, false otherwise */
   boolean isDisposed();
